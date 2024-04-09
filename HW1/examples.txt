@@ -1,0 +1,11 @@
+Best known for developing the theory of relativity, Einstein also made important contributions to quantum mechanics, and was thus a central figure in the revolutionary reshaping of the scientific understanding of nature that modern physics accomplished in the first decades of the twentieth century.
+Everyone looks to the Stark banners, with their direwolf crest-of-arms. We see their opinions about the pups change, as they come to understand the import of this omen.
+I do not like them in a house. I do not like them with a mouse. I do not like them here or there. I do not like them anywhere. I do not like green eggs and ham. I do not like them, Sam-I-am.
+I am Sam.  Sam I am.  I do not like green eggs and ham.
+I am Sam.       Sam I am.       I do not like green eggs and ham.
+<s> I am Sam. </s> <s> Sam I am. </s> <s> I do not like green eggs and ham. </s>
+<s>
+Natural Language Processing (NLP) is a branch of artificial intelligence that focuses on techniques that enable computers to understand, interpret and manipulate human language.  
+Common NLP tasks include question answering, text classification (including fakes detection), text summarization, text generation (including dialogue, translation and program synthesis), natural language inference and knowledgebase completion, among others.  
+The Steelers, whose history may be traced to a regional pro team that was established in the early 1920s, joined the NFL as the Pittsburgh Pirates on July 8, 1933. The team was owned by Art Rooney and took its original name from the baseball team of the same name, as was common practice for NFL teams at the time.
+Northwestern University (NU) is a private research university in Evanston, Illinois, United States. Established in 1851 to serve the historic Northwest Territory, it is the oldest chartered university in Illinois. The university has its main campus along the shores of Lake Michigan in the Chicago metropolitan area.
