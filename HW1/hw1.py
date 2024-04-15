@@ -1,28 +1,58 @@
 from nltk.tokenize import TreebankWordTokenizer
+from transformers import GPT2TokenizerFast
+
 from utils import NGramModel
 
 def part_1():
+    # Creates GPT2 Tokenizer
+    tokenizer = GPT2TokenizerFast.from_pretrained("openai-community/gpt2")
+
     filenames = ["wiki2.train", "wiki2.valid", "wiki2.test"]
     for name in filenames:
+
         # Open file
         file_text = None
-        with open(f"{name}.txt", "r") as f:
+        with open(f"{name}.txt", "r", encoding="utf-8") as f:
             file_text = f.read()
 
         # Tokenize
         file_text_tokenized = TreebankWordTokenizer().tokenize(file_text)
         
         # Write tokenized text
-        with open(f"{name}.tok", "w") as f:
+        with open(f"{name}.tok", "w", encoding='utf-8') as f:
             for token in file_text_tokenized:
                 f.write(f"{token}\n")
 
+        # Tokenize using GPT2
+        words = tokenizer.tokenize(file_text, add_special_tokens=False)
+        with open(f"{name}_gpt.tok", "w", encoding='utf-8') as f:
+            for word in words:
+                f.write(f"{word}\n")
+
 def part_2():
-    pass
+    print('\n\nStarting Part 2')
+    for n in [1, 2, 3, 7]:
+        print(f'\n{n}-gram model')
+        ngram = NGramModel(n, "wiki2.train")
+        ngram_gpt = NGramModel(n, "wiki2.train_gpt")
+
+        ppl = ngram.get_perplexity("wiki2.test", True)
+        ppl_gpt = ngram_gpt.get_perplexity("wiki2.test_gpt", True)
+        print(f"PPL for NLTK is {ppl}")
+        print(f"PPL for GPT is {ppl_gpt}")
 
 
 def part_3():
-    pass
+    print('\n\nStarting Part 3')
+    for n in [1, 2, 3, 7]:
+        print(f'\n{n}-gram model')
+        ngram = NGramModel(n, "wiki2.train", True)
+        ngram_gpt = NGramModel(n, "wiki2.train_gpt", True)
+
+        ppl = ngram.get_perplexity("wiki2.test", False)
+        ppl_gpt = ngram_gpt.get_perplexity("wiki2.test_gpt", False)
+        print(f"PPL for NLTK is {ppl}")
+        print(f"PPL for GPT is {ppl_gpt}")
 
 
 def part_4():
@@ -30,8 +60,32 @@ def part_4():
 
 
 def part_5():
-    pass
+    print('\n\nStarting Part 5')
 
+    # Open file
+    file_text = None
+    f = open(f"examples.txt", "r", encoding="utf-8")
+    lines = f.readlines()
+
+    tokenizer = GPT2TokenizerFast.from_pretrained("openai-community/gpt2")
+
+    ex_num = 0
+    for l in lines:
+        file_text_tokenized = TreebankWordTokenizer().tokenize(l)
+        
+        # Write tokenized text
+        with open(f"examples\{ex_num}.tok", "w", encoding='utf-8') as f:
+            for token in file_text_tokenized:
+                f.write(f"{token}\n")
+        ex_num += 1
+
+    for ex_num in range(11):
+        print(f"\nExample {ex_num}")
+        for n in [1, 2, 3, 7]:
+            print(f'\t{n}-gram model')
+            ngram = NGramModel(n, "wiki2.train", True)
+            ppl = ngram.get_perplexity(f"examples/{ex_num}", True)
+            print(f"\tPPL for NLTK is {ppl}")
 
 def main():
     part_1()
