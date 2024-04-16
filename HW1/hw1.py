@@ -34,6 +34,19 @@ def part_2():
     print("\nStarting Part 2")
     for n in [1, 2, 3, 7]:
         print(f"{n}-gram model")
+        ngram = NGramModel(n, "tokens/wiki2.train", False)
+        ngram_gpt = NGramModel(n, "tokens/wiki2.train_gpt", False)
+
+        ppl = ngram.get_perplexity("tokens/wiki2.test", False)
+        print(f"  PPL for NLTK is {ppl}")
+        ppl_gpt = ngram_gpt.get_perplexity("tokens/wiki2.test_gpt", False)
+        print(f"  PPL for GPT is {ppl_gpt}")
+
+
+def part_3():
+    print("\nStarting Part 3")
+    for n in [1, 2, 3, 7]:
+        print(f"{n}-gram model")
         ngram = NGramModel(n, "tokens/wiki2.train")
         ngram_gpt = NGramModel(n, "tokens/wiki2.train_gpt")
 
@@ -42,8 +55,7 @@ def part_2():
         print(f"  PPL for NLTK is {ppl}")
         print(f"  PPL for GPT is {ppl_gpt}")
 
-
-def part_3():
+def part_3a():
     print("\nStarting Part 3")
     for n in [1, 2, 3, 7]:
         print(f"{n}-gram model")
@@ -54,10 +66,6 @@ def part_3():
         ppl_gpt = ngram_gpt.get_perplexity("tokens/wiki2.test_gpt", False)
         print(f"  PPL for NLTK is {ppl}")
         print(f"  PPL for GPT is {ppl_gpt}")
-
-
-def part_4():
-    pass
 
 
 def part_5a():
@@ -79,23 +87,24 @@ def part_5a():
                 f.write(f"{token}\n")
 
 def part_5b():
-    # for i in range(11):
-    #     print(f"Example {i}")
-    #     for n in [1, 2, 3, 7]:
-    #         ngram = NGramModel(n, "tokens/wiki2.train", True)
-    #         ppl = ngram.get_perplexity(f"examples/{i}")
-    #         print(f"  {n}-gram model PPL for NLTK is {ppl}")
+    for i in range(11):
+        print(f"Example {i}")
+        for n in [1, 2, 3, 7]:
+            ngram = NGramModel(n, "tokens/wiki2.train", True)
+            ppl = ngram.get_perplexity(f"examples/{i}")
+            print(f"  {n}-gram NLTK {ppl}")
             
-    for n in [1, 2, 3, 7]:
-        ngram = NGramModel(n, "ex-0", True)
-        ppl = ngram.get_perplexity(f"ex-0")
-        print(f"  {n}-gram model PPL for NLTK is {ppl}")
+    # for n in [1, 2, 3, 7]:
+    #     ngram = NGramModel(n, "ex-0", True)
+    #     ppl = ngram.get_perplexity(f"ex-0")
+    #     print(f"  {n}-gram model PPL for NLTK is {ppl}")
+
 
 def main():
-    # part_1()
+    part_1()
     # part_2()
-    # part_3()
-    # part_4()
+    part_3()
+    part_3a()
     part_5a()
     part_5b()
 

@@ -60,13 +60,13 @@ class NGramModel:
         # Case for unigrams
         if self.n == 1:
             if self.add_1_smoothing:
-                return (num_ngram + 1) / (self.num_tokens + len(self.vocab))
+                return (num_ngram + 1) / (self.num_tokens + len(self.vocab) + 1)
             
             return num_ngram / self.num_tokens
         
         # Case for non-unigrams
         if self.add_1_smoothing:
-            return (num_ngram + 1) / (num_prefix + len(self.vocab))
+            return (num_ngram + 1) / (num_prefix + len(self.vocab) + 1)
         
         return num_ngram / num_prefix
 
@@ -103,7 +103,7 @@ class NGramModel:
             for i in range(num_ngrams):
                 prob = self.get_prob(tokens[i:i+self.n])
                 if ignore_unknown and prob == 0:
-                    continue
+                    continue    
                 sum_ += -math.log(prob)
                 count += 1
             return math.exp(sum_ / count)
