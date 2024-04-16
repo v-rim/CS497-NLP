@@ -9,6 +9,7 @@ class NGramModel:
 
         self.tokens = None
         self.num_tokens = 0
+        self.vocab = set()
         self.prefix_count = defaultdict(int)
         self.ngram_count = defaultdict(int)    
 
@@ -18,6 +19,9 @@ class NGramModel:
     def set_corpus(self, filename):
         with open(f"{filename}.tok", "r", encoding="utf-8") as f:
             self.tokens = [line.rstrip() for line in f]
+
+        # Set vocabulary
+        self.vocab = set(self.tokens)
 
         # Load file text into object
         self.num_tokens = len(self.tokens)
@@ -32,7 +36,7 @@ class NGramModel:
             self.ngram_count[tuple(context)] += 1
             context.pop(0)
             context.append(token)
-        # Above loop misses token
+        # Above loop misses last token
         self.prefix_count[tuple(context[:-1])] += 1
         self.ngram_count[tuple(context)] += 1
 
@@ -46,28 +50,28 @@ class NGramModel:
             print("ERROR: Length of ngram not equal to model ngram size")
             return None
         
+        num_ngram = self.ngram_count[ngram] if ngram in self.ngram_count else 0
+        num_prefix = self.prefix_count[prefix] if prefix in self.prefix_count else 0
+
+        # Return 0 probability if the ngram has never been seen
+        if num_ngram == 0 and not self.add_1_smoothing:
+            return 0
+        
         # Case for unigrams
-        if len(ngram) == 1:
+        if self.n == 1:
             if self.add_1_smoothing:
-                num_ngram = self.ngram_count[ngram] if ngram in self.ngram_count else 0
-                return (num_ngram + 1) / (self.num_tokens + len(self.ngram_count) + 1)
-            else:
-                num_ngram = self.ngram_count[ngram] if ngram in self.ngram_count else 0
-                return num_ngram / self.num_tokens
+                return (num_ngram + 1) / (self.num_tokens + len(self.vocab))
+            
+            return num_ngram / self.num_tokens
         
         # Case for non-unigrams
-        num_prefix = self.prefix_count[prefix] if prefix in self.prefix_count else 0
-        num_ngram = self.ngram_count[ngram] if ngram in self.ngram_count else 0
         if self.add_1_smoothing:
-            return (num_ngram + 1) / (num_prefix + len(self.ngram_count) + 1)
-        else:
-            if num_prefix == 0:
-                return 0
-            else:
-                return num_ngram / num_prefix
+            return (num_ngram + 1) / (num_prefix + len(self.vocab))
+        
+        return num_ngram / num_prefix
 
 
-    def get_perplexity(self, filename, ignore_unknown):
+    def get_perplexity(self, filename, ignore_unknown=True):
         with open(f"{filename}.tok", "r", encoding="utf-8") as f:
             tokens = [line.rstrip() for line in f]
 
