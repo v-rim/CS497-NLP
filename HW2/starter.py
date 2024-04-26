@@ -17,7 +17,7 @@ from transformers import GPT2TokenizerFast
 
 def read_corpus(filename,tokenizer):
     seq = []
-    with open(filename,'rt') as f:
+    with open(filename,'rt', encoding="utf-8") as f:
         for line in f:
             line = line.replace('\n','')
             tokens = tokenizer(line)
@@ -220,23 +220,6 @@ class CosineWithRestarts(torch.optim.lr_scheduler._LRScheduler):
 
         return lrs
     
-class EncoderLayer(nn.Module):
-    def __init__(self, d_model, heads, dropout=0.1):
-        super().__init__()
-        self.norm_1 = Norm(d_model)
-        self.norm_2 = Norm(d_model)
-        self.attn = MultiHeadAttention(heads, d_model, dropout=dropout)
-        self.ff = FeedForward(d_model, dropout=dropout)
-        self.dropout_1 = nn.Dropout(dropout)
-        self.dropout_2 = nn.Dropout(dropout)
-        
-    def forward(self, x, mask):
-        x2 = self.norm_1(x)
-        x = x + self.dropout_1(self.attn(x2,x2,x2,mask))
-        x2 = self.norm_2(x)
-        x = x + self.dropout_2(self.ff(x2))
-        return x
-    
 # build a decoder layer with two multi-head attention layers and
 # one feed-forward layer
 class DecoderLayer(nn.Module):
@@ -254,30 +237,15 @@ class DecoderLayer(nn.Module):
         self.attn_2 = MultiHeadAttention(heads, d_model, dropout=dropout)
         self.ff = FeedForward(d_model, dropout=dropout)
 
-    def forward(self, x, e_outputs, src_mask, trg_mask):
+    def forward(self, x, trg_mask):
         x2 = self.norm_1(x)
         x = x + self.dropout_1(self.attn_1(x2, x2, x2, trg_mask))
         x2 = self.norm_2(x)
-        x = x + self.dropout_2(self.attn_2(x2, e_outputs, e_outputs, \
-        src_mask))
+        x = x + self.dropout_2(self.attn_2(x2, x2, x2, trg_mask))
         x2 = self.norm_3(x)
         x = x + self.dropout_3(self.ff(x2))
         return x    
-    
-class Encoder(nn.Module):
-    def __init__(self, vocab_size, d_model, N, heads, dropout):
-        super().__init__()
-        self.N = N
-        self.embed = Embedder(vocab_size, d_model)
-        self.pe = PositionalEncoder(d_model, dropout=dropout)
-        self.layers = get_clones(EncoderLayer(d_model, heads, dropout), N)
-        self.norm = Norm(d_model)
-    def forward(self, src, mask):
-        x = self.embed(src)
-        x = self.pe(x)
-        for i in range(self.N):
-            x = self.layers[i](x, mask)
-        return self.norm(x)
+
     
 class Decoder(nn.Module):
     def __init__(self, vocab_size, d_model, N, heads, dropout):
@@ -287,23 +255,22 @@ class Decoder(nn.Module):
         self.pe = PositionalEncoder(d_model, dropout=dropout)
         self.layers = get_clones(DecoderLayer(d_model, heads, dropout), N)
         self.norm = Norm(d_model)
-    def forward(self, trg, e_outputs, src_mask, trg_mask):
+
+    def forward(self, trg, trg_mask):
         x = self.embed(trg)
         x = self.pe(x)
         for i in range(self.N):
-            x = self.layers[i](x, e_outputs, src_mask, trg_mask)
+            x = self.layers[i](x, trg_mask)
         return self.norm(x)
 
 class Transformer(nn.Module):
-    def __init__(self, src_vocab, trg_vocab, d_model, N, heads, dropout):
+    def __init__(self, vocab, d_model, N, heads, dropout):
         super().__init__()
-        self.encoder = Encoder(src_vocab, d_model, N, heads, dropout)
-        self.decoder = Decoder(trg_vocab, d_model, N, heads, dropout)
-        self.out = nn.Linear(d_model, trg_vocab)
-    def forward(self, src, trg, src_mask, trg_mask):
-        e_outputs = self.encoder(src, src_mask)
-        #print("DECODER")
-        d_output = self.decoder(trg, e_outputs, src_mask, trg_mask)
+        self.decoder = Decoder(vocab, d_model, N, heads, dropout)
+        self.out = nn.Linear(d_model, vocab)
+
+    def forward(self,   trg, mask):
+        d_output = self.decoder(trg, mask)
         output = self.out(d_output)
         return output
 
@@ -325,18 +292,54 @@ def get_model(opt, src_vocab, trg_vocab):
     
     return model
     
+def batchify(data, opt):
+    batched_data = [data[i:i + opt.batchsize] for i in range(0, len(data), opt.batchsize)]
+    if len(batched_data[-1]) < opt.batchsize:
+        pad_num = opt.batchsize - len(batched_data[-1])
+        batched_data[-1].extend([0] * pad_num)
+    return batched_data
+   
+
 def train_model(model, opt):
     
     print("training model...")
-    model.train()
     
-    # write code to:
-    #  1. create a nopeak mask
-    #  2. feed training data to the model in batches
-    #  3. send the indices of training tokens to the GPU
-    #  4. linearize the predictions and compute the loss against ground truth
-    #     (you can use F.cross_entropy or write your own code)
-    #  5. calculate and apply the gradients with loss.backward() and optimizer.step()
+    batched_data = batchify(opt.train, opt)
+
+    model.to(opt.device)
+    criterion = F.cross_entropy
+
+    for epoch in range(opt.epochs):
+        model.train()
+        avg_loss = 0.0
+        total_tokens = 0.0
+
+        for i, batch in enumerate(opt.train):
+            batched_data = batched_data.to(opt.device)
+            lengths = lengths.to(opt.device)
+
+            nopeak_mask = torch.stack([torch.tril(torch.ones(opt.batchsize, opt.batchsize)) for d in batched_data]).to(opt.device)
+
+            opt.optimizer.zero_grad()
+            output = model(batched_data, nopeak_mask)
+            targets = batched_data[:, 1:]
+            
+            predictions = output.view(-1, model.vocab_size)
+            targets = targets.view(-1)
+
+            loss = criterion(predictions, targets)
+            loss.backward()
+            opt.optimizer.step()
+
+            avg_loss += loss.item()
+            total_tokens += targets.size(0)
+
+            if i % opt.log_interval == 0 and i > 0:
+                avg_loss /= opt.log_interval
+                ppl = torch.exp(avg_loss)
+                print(f'Epoch {epoch+1}, Batch {i}, Loss: {avg_loss:.4f} Perplexity: {ppl:.4f}')
+                avg_loss = 0.0
+
     #  6. report intermediate trainining perplexity
     #  7. generate a test perplexity once per training epoch by calling test_model()
     #  8. save model weights to file specified in opt.savename
@@ -374,7 +377,7 @@ def main():
     parser.add_argument('-norm', type=float, default=2.0)
                 
     opt = parser.parse_args()
-    opt.verbose = False    
+    opt.verbose = False
     
     opt.device = 0 if opt.no_cuda is False else -1
     if opt.device == 0:
@@ -389,13 +392,14 @@ def main():
     source_name = sys.argv[0]
     dir_name = dir_name + "//"
     opt.dir_name = dir_name
-    shutil.copy(source_name,dir_name + source_name)
+    # shutil.copy(source_name,dir_name + source_name)
     opt.log_file = dir_name + "log_file.txt"
     
     print(str(opt))
     
     tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
     opt.train = read_corpus('wiki2.train.txt',tokenizer)
+    print(opt.train[0])
     opt.valid = read_corpus('wiki2.valid.txt',tokenizer)
     opt.test = read_corpus('wiki2.test.txt',tokenizer)
     
