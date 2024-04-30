@@ -269,17 +269,17 @@ class Transformer(nn.Module):
         self.decoder = Decoder(vocab, d_model, N, heads, dropout)
         self.out = nn.Linear(d_model, vocab)
 
-    def forward(self,   trg, mask):
+    def forward(self, trg, mask):
         d_output = self.decoder(trg, mask)
         output = self.out(d_output)
         return output
 
-def get_model(opt, src_vocab, trg_vocab):
+def get_model(opt, vocab):
     
     assert opt.d_model % opt.heads == 0
     assert opt.dropout < 1
 
-    model = Transformer(src_vocab, trg_vocab, opt.d_model, opt.n_layers, opt.heads, opt.dropout)
+    model = Transformer(vocab, opt.d_model, opt.n_layers, opt.heads, opt.dropout)
     model.to(opt.device)
        
     if opt.loadname is not None:
@@ -292,64 +292,91 @@ def get_model(opt, src_vocab, trg_vocab):
     
     return model
     
-def batchify(data, opt):
-    batched_data = [data[i:i + opt.batchsize] for i in range(0, len(data), opt.batchsize)]
-    if len(batched_data[-1]) < opt.batchsize:
-        pad_num = opt.batchsize - len(batched_data[-1])
-        batched_data[-1].extend([0] * pad_num)
-    return batched_data
-   
+def split_sequences(data, opt):
+    seqs = [data[i:i + opt.seqlen] for i in range(0, len(data), opt.seqlen)]
+    if len(seqs[-1]) < opt.seqlen:
+        pad_num = opt.seqlen - len(seqs[-1])
+        seqs[-1].extend([0] * pad_num)
+
+    seqs = [torch.tensor(seq) for seq in seqs]
+    return seqs
+
+def batchify(seqs, opt):
+    batches = [seqs[i:i+opt.batchsize] for i in range(0, len(seqs), opt.batchsize)]
+    return batches
+
+def join_vocab(vocab1, vocab2, opt):
+    seqs1 = split_sequences(vocab1, opt)
+    seqs2 = split_sequences(vocab2, opt)
+    vocab = vocab1 + vocab2
+    return vocab
 
 def train_model(model, opt):
-    
     print("training model...")
-    
-    batched_data = batchify(opt.train, opt)
-
+    model.train()
     model.to(opt.device)
-    criterion = F.cross_entropy
+
+    batches = batchify(opt.vocab, opt)
 
     for epoch in range(opt.epochs):
         model.train()
-        avg_loss = 0.0
+        total_loss = 0.0
         total_tokens = 0.0
 
-        for i, batch in enumerate(opt.train):
-            batched_data = batched_data.to(opt.device)
-            lengths = lengths.to(opt.device)
+        for i, batch in enumerate(batches):
 
-            nopeak_mask = torch.stack([torch.tril(torch.ones(opt.batchsize, opt.batchsize)) for d in batched_data]).to(opt.device)
+            nopeak_mask = torch.tril(torch.ones(opt.batchsize, opt.batchsize))
+            nopeak_mask.to(opt.device)
 
             opt.optimizer.zero_grad()
-            output = model(batched_data, nopeak_mask)
-            targets = batched_data[:, 1:]
+            output = model(batch, nopeak_mask)
+            targets = batch[:, 1:]
             
             predictions = output.view(-1, model.vocab_size)
             targets = targets.view(-1)
 
-            loss = criterion(predictions, targets)
+            loss = F.cross_entropy(predictions, targets)
             loss.backward()
             opt.optimizer.step()
 
-            avg_loss += loss.item()
+            total_loss += loss.item()
             total_tokens += targets.size(0)
 
-            if i % opt.log_interval == 0 and i > 0:
-                avg_loss /= opt.log_interval
-                ppl = torch.exp(avg_loss)
-                print(f'Epoch {epoch+1}, Batch {i}, Loss: {avg_loss:.4f} Perplexity: {ppl:.4f}')
-                avg_loss = 0.0
+            ppl = torch.exp(loss)
 
-    #  6. report intermediate trainining perplexity
-    #  7. generate a test perplexity once per training epoch by calling test_model()
-    #  8. save model weights to file specified in opt.savename
-    #  SEE trainer.py for examples of each of the above
+            #  6. report intermediate trainining perplexity
+            # I don't know how often we want to print this
+            avg_loss = total_loss / len(batches)
+            print(f'Epoch {epoch+1}, Loss: {avg_loss:.4f} Perplexity: {ppl:.4f}')
+        
+        test_model(model, opt)
+
+    torch.save(model.state_dict(), opt.savename)
+        
     
-def test_model(model, opt, epoch):
+def test_model(model, opt):
     print("testing model...")
     model.eval()
+    total_loss = 0
+
+    for i, batch in enumerate(opt.test):
+        nopeak_mask = torch.tril(torch.ones(opt.batchsize, opt.batchsize))
+        nopeak_mask.to(opt.device)
+
+        output = model(batch, nopeak_mask)
+
+        predictions = output.view(-1, model.vocab_size)
+        targets = targets.view(-1)
     
-    # write code to generate perplexity of test set
+        loss = F.cross_entropy(predictions, targets)
+
+        total_loss += loss.item()
+        total_tokens += targets.size(0)
+        
+    avg_loss = total_loss / i
+    ppl = torch.exp(avg_loss)
+    
+    print(f'Perplexity: {ppl:.4f}')
     
     model.train()
 
@@ -378,7 +405,7 @@ def main():
                 
     opt = parser.parse_args()
     opt.verbose = False
-    
+
     opt.device = 0 if opt.no_cuda is False else -1
     if opt.device == 0:
         assert torch.cuda.is_available()
@@ -395,13 +422,15 @@ def main():
     # shutil.copy(source_name,dir_name + source_name)
     opt.log_file = dir_name + "log_file.txt"
     
-    print(str(opt))
     
     tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
     opt.train = read_corpus('wiki2.train.txt',tokenizer)
-    print(opt.train[0])
     opt.valid = read_corpus('wiki2.valid.txt',tokenizer)
     opt.test = read_corpus('wiki2.test.txt',tokenizer)
+    opt.vocab = join_vocab(opt.train, opt.test)
+    opt.test = split_sequences(opt.test, opt)
+    opt.test = batchify(opt.test, opt)
+
     
     obs = len(opt.train)
     opt.vocab_size = 50257
