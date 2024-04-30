@@ -382,7 +382,7 @@ def test_model(model, opt):
         total_loss += loss.item()
         total_tokens += targets.size(0)
         
-    avg_loss = total_loss / i
+    avg_loss = total_loss / len(opt.test)
     ppl = torch.exp(avg_loss)
     
     print(f'Perplexity: {ppl:.4f}')
