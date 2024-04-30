@@ -324,8 +324,7 @@ def train_model(model, opt):
         total_tokens = 0.0
 
         for i, batch in enumerate(batches):
-
-            nopeak_mask = torch.tril(torch.ones(opt.batchsize, opt.batchsize))
+            nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen, opt.seqlen)) for b in batch])
             nopeak_mask.to(opt.device)
 
             opt.optimizer.zero_grad()
@@ -360,7 +359,7 @@ def test_model(model, opt):
     total_loss = 0
 
     for i, batch in enumerate(opt.test):
-        nopeak_mask = torch.tril(torch.ones(opt.batchsize, opt.batchsize))
+        nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen, opt.seqlen)) for b in batch])
         nopeak_mask.to(opt.device)
 
         output = model(batch, nopeak_mask)
