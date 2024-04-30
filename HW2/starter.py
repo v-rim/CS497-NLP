@@ -302,13 +302,18 @@ def split_sequences(data, opt):
     return seqs
 
 def batchify(seqs, opt):
-    batches = [seqs[i:i+opt.batchsize] for i in range(0, len(seqs), opt.batchsize)]
+    batches = []
+    for i in range(0, len(seqs), opt.batchsize):
+        batch = nn.utils.rnn.pad_sequence(seqs[i:i+opt.batchsize], batch_first=True)
+        batches.append(batch)
+
     return batches
 
 def join_vocab(vocab1, vocab2, opt):
     seqs1 = split_sequences(vocab1, opt)
     seqs2 = split_sequences(vocab2, opt)
-    vocab = vocab1 + vocab2
+    
+    vocab = seqs1 + seqs2
     return vocab
 
 def train_model(model, opt):
@@ -325,9 +330,14 @@ def train_model(model, opt):
 
         for i, batch in enumerate(batches):
             nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen, opt.seqlen)) for b in batch])
+            print(opt.device)
+            if torch.cuda.is_available():
+                print("Cuda is available")
             nopeak_mask.to(opt.device)
+            batch.to(opt.device)
 
             opt.optimizer.zero_grad()
+            print(batch.device, nopeak_mask.device)
             output = model(batch, nopeak_mask)
             targets = batch[:, 1:]
             
@@ -426,7 +436,7 @@ def main():
     opt.train = read_corpus('wiki2.train.txt',tokenizer)
     opt.valid = read_corpus('wiki2.valid.txt',tokenizer)
     opt.test = read_corpus('wiki2.test.txt',tokenizer)
-    opt.vocab = join_vocab(opt.train, opt.test)
+    opt.vocab = join_vocab(opt.train, opt.test, opt)
     opt.test = split_sequences(opt.test, opt)
     opt.test = batchify(opt.test, opt)
 
@@ -439,7 +449,7 @@ def main():
     opt.indices = torch.tensor(temp)
     opt.indices = opt.indices.cuda()
     
-    model = get_model(opt,opt.vocab_size,opt.vocab_size)
+    model = get_model(opt,opt.vocab_size)
         
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])        
