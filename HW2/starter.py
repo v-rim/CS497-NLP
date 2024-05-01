@@ -335,15 +335,15 @@ def train_model(model, opt):
             batch = batch.to(opt.device)
 
             opt.optimizer.zero_grad()
-            print(batch.device, nopeak_mask.device)
+            # print(batch.device, nopeak_mask.device)
             output = model(batch[:, :-1], nopeak_mask)
             targets = batch[:, 1:]
             
             predictions = output.view(-1, opt.vocab_size)
             targets = targets.view(-1)
             
-            print(f"{predictions.size() = }")
-            print(f"{targets.size() = }")
+            # print(f"{predictions.size() = }")
+            # print(f"{targets.size() = }")
 
             loss = F.cross_entropy(predictions, targets)
             loss.backward()
@@ -357,7 +357,7 @@ def train_model(model, opt):
             #  6. report intermediate trainining perplexity
             # I don't know how often we want to print this
             avg_loss = total_loss / len(batches)
-            # print(f'Epoch {epoch+1}, Loss: {avg_loss:.4f} Perplexity: {ppl:.4f}')
+            print(f'Epoch {epoch+1}, Batch: {i}, Loss: {avg_loss:.4f} Perplexity: {ppl:.4f}')
         
         test_model(model, opt)
 
@@ -370,12 +370,13 @@ def test_model(model, opt):
     total_loss = 0
 
     for i, batch in enumerate(opt.test):
-        nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen, opt.seqlen)) for b in range(opt.batchsize)])
+        nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen -1, opt.seqlen -1)) for b in range(opt.batchsize)])
         nopeak_mask.to(opt.device)
 
-        output = model(batch, nopeak_mask)
+        output = model(batch[:, :-1], nopeak_mask)
 
         predictions = output.view(-1, model.vocab_size)
+        targets = batch[:, 1:]
         targets = targets.view(-1)
     
         loss = F.cross_entropy(predictions, targets)
