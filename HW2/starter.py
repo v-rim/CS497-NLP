@@ -226,15 +226,15 @@ class DecoderLayer(nn.Module):
     def __init__(self, d_model, heads, dropout=0.1):
         super().__init__()
         self.norm_1 = Norm(d_model)
-        self.norm_2 = Norm(d_model)
+        # self.norm_2 = Norm(d_model)
         self.norm_3 = Norm(d_model)
         
         self.dropout_1 = nn.Dropout(dropout)
-        self.dropout_2 = nn.Dropout(dropout)
+        # self.dropout_2 = nn.Dropout(dropout)
         self.dropout_3 = nn.Dropout(dropout)
         
         self.attn_1 = MultiHeadAttention(heads, d_model, dropout=dropout)
-        self.attn_2 = MultiHeadAttention(heads, d_model, dropout=dropout)
+        # self.attn_2 = MultiHeadAttention(heads, d_model, dropout=dropout)
         self.ff = FeedForward(d_model, dropout=dropout)
 
     def forward(self, x, trg_mask):
