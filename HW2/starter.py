@@ -240,8 +240,8 @@ class DecoderLayer(nn.Module):
     def forward(self, x, trg_mask):
         x2 = self.norm_1(x)
         x = x + self.dropout_1(self.attn_1(x2, x2, x2, trg_mask))
-        x2 = self.norm_2(x)
-        x = x + self.dropout_2(self.attn_2(x2, x2, x2, trg_mask))
+        # x2 = self.norm_2(x) Get rid of self attention completely
+        # x = x + self.dropout_2(self.attn_2(x2, x2, x2, trg_mask))
         x2 = self.norm_3(x)
         x = x + self.dropout_3(self.ff(x2))
         return x    
@@ -324,25 +324,26 @@ def train_model(model, opt):
     batches = batchify(opt.vocab, opt)
 
     for epoch in range(opt.epochs):
-        model.train()
         total_loss = 0.0
         total_tokens = 0.0
 
         for i, batch in enumerate(batches):
             nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen, opt.seqlen)) for b in batch])
-            print(opt.device)
-            if torch.cuda.is_available():
-                print("Cuda is available")
-            nopeak_mask.to(opt.device)
-            batch.to(opt.device)
+            
+            # Move tensors to GPU. Really should just initialize them there though
+            nopeak_mask = nopeak_mask.to(opt.device)
+            batch = batch.to(opt.device)
 
             opt.optimizer.zero_grad()
             print(batch.device, nopeak_mask.device)
             output = model(batch, nopeak_mask)
             targets = batch[:, 1:]
             
-            predictions = output.view(-1, model.vocab_size)
+            predictions = output.view(-1, opt.vocab_size)
             targets = targets.view(-1)
+            
+            print(f"{predictions.size() = }")
+            print(f"{targets.size() = }")
 
             loss = F.cross_entropy(predictions, targets)
             loss.backward()
@@ -415,10 +416,10 @@ def main():
     opt = parser.parse_args()
     opt.verbose = False
 
-    opt.device = 0 if opt.no_cuda is False else -1
-    if opt.device == 0:
-        assert torch.cuda.is_available()
-    opt.device = torch.device("cuda:0")
+    # opt.device = 0 if opt.no_cuda is False else -1
+    # if opt.device == 0:
+    #     assert torch.cuda.is_available()
+    opt.device = torch.device("cuda:0" if (torch.cuda.is_available() and not opt.no_cuda) else "cpu")
     
     time_name = time.strftime("%y%m%d_%H%M%S")
     opt.time_name = time_name
