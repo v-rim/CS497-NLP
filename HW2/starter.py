@@ -241,7 +241,7 @@ class DecoderLayer(nn.Module):
         x2 = self.norm_1(x)
         x = x + self.dropout_1(self.attn_1(x2, x2, x2, trg_mask))
         # x2 = self.norm_2(x) Get rid of self attention completely
-        # x = x + self.dropout_2(self.attn_2(x2, x2, x2, trg_mask))
+        # x = x + self.dropout_2(self.attn_2(x2, x2x2, trg_mask))
         x2 = self.norm_3(x)
         x = x + self.dropout_3(self.ff(x2))
         return x    
@@ -328,7 +328,7 @@ def train_model(model, opt):
         total_tokens = 0.0
 
         for i, batch in enumerate(batches):
-            nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen, opt.seqlen)) for b in batch])
+            nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen - 1, opt.seqlen - 1)) for b in batch])
             
             # Move tensors to GPU. Really should just initialize them there though
             nopeak_mask = nopeak_mask.to(opt.device)
@@ -336,7 +336,7 @@ def train_model(model, opt):
 
             opt.optimizer.zero_grad()
             print(batch.device, nopeak_mask.device)
-            output = model(batch, nopeak_mask)
+            output = model(batch[:, :-1], nopeak_mask)
             targets = batch[:, 1:]
             
             predictions = output.view(-1, opt.vocab_size)
@@ -357,7 +357,7 @@ def train_model(model, opt):
             #  6. report intermediate trainining perplexity
             # I don't know how often we want to print this
             avg_loss = total_loss / len(batches)
-            print(f'Epoch {epoch+1}, Loss: {avg_loss:.4f} Perplexity: {ppl:.4f}')
+            # print(f'Epoch {epoch+1}, Loss: {avg_loss:.4f} Perplexity: {ppl:.4f}')
         
         test_model(model, opt)
 
