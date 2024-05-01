@@ -371,12 +371,13 @@ def test_model(model, opt, epoch):
 
     for i, batch in enumerate(opt.test):
         nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen -1, opt.seqlen -1)) for b in range(opt.batchsize)])
-        nopeak_mask.to(opt.device)
+        nopeak_mask = nopeak_mask.to(opt.device)
+        batch = batch.to(opt.device)
 
         output = model(batch[:, :-1], nopeak_mask)
-
-        predictions = output.view(-1, model.vocab_size)
         targets = batch[:, 1:]
+
+        predictions = output.view(-1, opt.vocab_size)
         targets = targets.view(-1)
     
         loss = F.cross_entropy(predictions, targets)
@@ -421,7 +422,7 @@ def main():
     # if opt.device == 0:
     #     assert torch.cuda.is_available()
     opt.device = torch.device("cuda:0" if (torch.cuda.is_available() and not opt.no_cuda) else "cpu")
-    
+    print(opt.device)
     time_name = time.strftime("%y%m%d_%H%M%S")
     opt.time_name = time_name
     dir_name = "saved/%s" % (opt.dir_name)
