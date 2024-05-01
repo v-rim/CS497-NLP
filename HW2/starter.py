@@ -340,7 +340,7 @@ def train_model(model, opt):
             targets = batch[:, 1:]
             
             predictions = output.view(-1, opt.vocab_size)
-            targets = targets.view(-1)
+            targets = targets.contiguous().view(-1)
             
             # print(f"{predictions.size() = }")
             # print(f"{targets.size() = }")
