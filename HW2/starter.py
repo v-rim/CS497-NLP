@@ -359,12 +359,12 @@ def train_model(model, opt):
             avg_loss = total_loss / len(batches)
             print(f'Epoch {epoch+1}, Batch: {i}, Loss: {avg_loss:.4f} Perplexity: {ppl:.4f}')
         
-        test_model(model, opt)
+        test_model(model, opt, epoch)
 
     torch.save(model.state_dict(), opt.savename)
         
     
-def test_model(model, opt):
+def test_model(model, opt, epoch):
     print("testing model...")
     model.eval()
     total_loss = 0
