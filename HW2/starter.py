@@ -376,6 +376,8 @@ def test_model(model, opt, batches, corpus_name):
             
         predictions = output.view(-1, opt.vocab_size)
         targets = batch[:, 1:]
+
+        predictions = output.view(-1, opt.vocab_size)
         targets = targets.view(-1)
         loss = F.cross_entropy(predictions, targets)
         batch_losses.append(loss)
@@ -414,7 +416,7 @@ def main():
     # if opt.device == 0:
     #     assert torch.cuda.is_available()
     opt.device = torch.device("cuda:0" if (torch.cuda.is_available() and not opt.no_cuda) else "cpu")
-    
+    print(opt.device)
     time_name = time.strftime("%y%m%d_%H%M%S")
     opt.time_name = time_name
     dir_name = "saved/%s" % (opt.dir_name)
