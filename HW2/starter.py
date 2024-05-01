@@ -301,10 +301,12 @@ def split_sequences(data, opt):
     seqs = [torch.tensor(seq) for seq in seqs]
     return seqs
 
-def batchify(seqs, opt):
+def batchify(seqs, opt, batchsize=None):
+    if batchsize is None:
+        batchsize = opt.batchsize
     batches = []
     for i in range(0, len(seqs), opt.batchsize):
-        batch = nn.utils.rnn.pad_sequence(seqs[i:i+opt.batchsize], batch_first=True)
+        batch = nn.utils.rnn.pad_sequence(seqs[i:i+batchsize], batch_first=True).to(opt.device)
         batches.append(batch)
 
     return batches
@@ -324,15 +326,12 @@ def train_model(model, opt):
     batches = batchify(opt.vocab, opt)
 
     for epoch in range(opt.epochs):
+        model.train()
         total_loss = 0.0
         total_tokens = 0.0
 
         for i, batch in enumerate(batches):
-            nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen - 1, opt.seqlen - 1)) for b in batch])
-            
-            # Move tensors to GPU. Really should just initialize them there though
-            nopeak_mask = nopeak_mask.to(opt.device)
-            batch = batch.to(opt.device)
+            nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen - 1, opt.seqlen - 1)) for b in batch]).to(opt.device)
 
             opt.optimizer.zero_grad()
             # print(batch.device, nopeak_mask.device)
@@ -349,47 +348,41 @@ def train_model(model, opt):
             loss.backward()
             opt.optimizer.step()
 
-            total_loss += loss.item()
-            total_tokens += targets.size(0)
+            # total_loss += loss.item()
+            # total_tokens += targets.size(0)
 
             ppl = torch.exp(loss)
 
             #  6. report intermediate trainining perplexity
             # I don't know how often we want to print this
-            avg_loss = total_loss / len(batches)
-            print(f'Epoch {epoch+1}, Batch: {i}, Loss: {avg_loss:.4f} Perplexity: {ppl:.4f}')
+            # avg_loss = total_loss / len(batches)
+            print(f'Epoch {epoch+1}, Batch: {i}, Loss: {loss.item():.4f} Perplexity: {ppl:.4f}')
         
-        test_model(model, opt, epoch)
+        test_model(model, opt, opt.valid, "validation")
 
     torch.save(model.state_dict(), opt.savename)
-        
+  
     
-def test_model(model, opt, epoch):
+def test_model(model, opt, batches, corpus_name):
     print("testing model...")
     model.eval()
-    total_loss = 0
-
-    for i, batch in enumerate(opt.test):
-        nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen -1, opt.seqlen -1)) for b in range(opt.batchsize)])
-        nopeak_mask.to(opt.device)
-
-        output = model(batch[:, :-1], nopeak_mask)
-
-        predictions = output.view(-1, model.vocab_size)
+    
+    batch_losses = [] 
+    for i, batch in enumerate(batches):
+        nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen -1, opt.seqlen -1)) for b in range(1)]).to(opt.device)
+        
+        with torch.no_grad():
+            output = model(batch[:, :-1], nopeak_mask)
+            
+        predictions = output.view(-1, opt.vocab_size)
         targets = batch[:, 1:]
         targets = targets.view(-1)
-    
         loss = F.cross_entropy(predictions, targets)
-
-        total_loss += loss.item()
-        total_tokens += targets.size(0)
+        batch_losses.append(loss)
         
-    avg_loss = total_loss / len(opt.test)
-    ppl = torch.exp(avg_loss)
+    ppl = torch.exp(torch.stack(batch_losses).mean())
+    print(f'Perplexity ({corpus_name}): {ppl:.4f}')
     
-    print(f'Perplexity: {ppl:.4f}')
-    
-    model.train()
 
 def main():
     
@@ -400,10 +393,10 @@ def main():
     parser.add_argument('-SGDR', action='store_true')
     parser.add_argument('-epochs', type=int, default=20)
     parser.add_argument('-d_model', type=int, default=512)
-    parser.add_argument('-n_layers', type=int, default=6)
-    parser.add_argument('-heads', type=int, default=8)
+    parser.add_argument('-n_layers', type=int, default=1) # Changed from default
+    parser.add_argument('-heads', type=int, default=8) 
     parser.add_argument('-dropout', type=int, default=0.1)
-    parser.add_argument('-batchsize', type=int, default=1)
+    parser.add_argument('-batchsize', type=int, default=4) # Changed from default
     parser.add_argument('-printevery', type=int, default=100)
     parser.add_argument('-lr', type=int, default=0.00001)
     parser.add_argument('-seqlen', type=int, default=512)
@@ -438,9 +431,16 @@ def main():
     opt.train = read_corpus('wiki2.train.txt',tokenizer)
     opt.valid = read_corpus('wiki2.valid.txt',tokenizer)
     opt.test = read_corpus('wiki2.test.txt',tokenizer)
-    opt.vocab = join_vocab(opt.train, opt.test, opt)
+    
+    # opt.vocab = join_vocab(opt.train, opt.test, opt)
+    opt.vocab = join_vocab(opt.test, opt.valid, opt)
+    
+    opt.train = split_sequences(opt.train, opt)
+    opt.train = batchify(opt.train, opt, 1)
+    opt.valid = split_sequences(opt.valid, opt)
+    opt.valid = batchify(opt.vocab, opt, 1)
     opt.test = split_sequences(opt.test, opt)
-    opt.test = batchify(opt.test, opt)
+    opt.test = batchify(opt.vocab, opt, 1)
 
     
     obs = len(opt.train)
