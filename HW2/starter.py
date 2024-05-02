@@ -393,17 +393,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-no_cuda', action='store_true')
     parser.add_argument('-SGDR', action='store_true')
-    parser.add_argument('-epochs', type=int, default=20)
+    parser.add_argument('-epochs', type=int, default=1) # Changed from default (20)
     parser.add_argument('-d_model', type=int, default=512)
-    parser.add_argument('-n_layers', type=int, default=1) # Changed from default
+    parser.add_argument('-n_layers', type=int, default=1) # Changed from default (6)
     parser.add_argument('-heads', type=int, default=8) 
     parser.add_argument('-dropout', type=int, default=0.1)
-    parser.add_argument('-batchsize', type=int, default=4) # Changed from default
+    parser.add_argument('-batchsize', type=int, default=4) # Changed from default (1)
     parser.add_argument('-printevery', type=int, default=100)
     parser.add_argument('-lr', type=int, default=0.00001)
     parser.add_argument('-seqlen', type=int, default=512)
     parser.add_argument('-threshold', type=int, default=3)
-    parser.add_argument('-savename', type=str)    
+    parser.add_argument('-savename', type=str, default="model_weights.pt")    
     parser.add_argument('-loadname', type=str)    
     parser.add_argument('-tied', type=int, default=1)
     parser.add_argument('-dir_name', type=str,default='model')
@@ -434,8 +434,8 @@ def main():
     opt.valid = read_corpus('wiki2.valid.txt',tokenizer)
     opt.test = read_corpus('wiki2.test.txt',tokenizer)
     
-    # opt.vocab = join_vocab(opt.train, opt.test, opt)
-    opt.vocab = join_vocab(opt.test, opt.valid, opt)
+    opt.vocab = join_vocab(opt.train, opt.test, opt)
+    # opt.vocab = join_vocab(opt.test, opt.valid, opt)
     
     opt.train = split_sequences(opt.train, opt)
     opt.train = batchify(opt.train, opt, 1)
@@ -464,16 +464,16 @@ def main():
     if opt.SGDR == True:
         opt.sched = CosineWithRestarts(opt.optimizer, T_max=opt.train_len)
 
-    if opt.savename is not None:
-        try:
-            os.mkdir(opt.savename)
-        except:
-            nothing = 1
+    # if opt.savename is not None:
+    #     try:
+    #         os.mkdir(opt.savename)
+    #     except:
+    #         nothing = 1
     opt.src_pad = 0
     opt.trg_pad = 0
             
     train_model(model,opt)
-    test_model(model,opt,-1)
+    # test_model(model,opt,-1)
         
 if __name__ == "__main__":
     main()        
