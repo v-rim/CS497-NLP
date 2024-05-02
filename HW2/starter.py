@@ -360,11 +360,11 @@ def train_model(model, opt):
     training_loss = []
     validation_loss = []
 
+    total_batch_index = 0
     for epoch in range(opt.epochs):
         model.train()
         total_loss = 0.0
         total_tokens = 0.0
-        total_batch_index = 0
 
         for i, batch in enumerate(batches):
             nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen - 1, opt.seqlen - 1)) for b in batch]).to(opt.device)
