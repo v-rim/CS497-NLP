@@ -94,6 +94,24 @@ def attention(q, k, v, d_k, mask=None, dropout=None):
     output = torch.matmul(scores, v)
     return output
 
+def attention_euclidian(q, k, v, d_k, mask=None, dropout=None):
+    squared_euclidian = torch.sum((q.unsqueeze(1) - k.unsqueeze(1)) ** 2 , dim=-1)
+    distances = torch.sqrt(squared_euclidian)
+
+    if mask is not None:
+        mask = mask.unsqueeze(1)
+        distances = distances.masked_fill(mask == 0, 1e9)
+
+    scores = torch.exp(-distances / math.sqrt(d_k))
+
+    scores = F.softmax(scores, dim=-1)
+
+    if dropout is not None:
+        scores = dropout(scores)
+    
+    output = torch.matmul(scores, v)
+    return output
+
 class MultiHeadAttention(nn.Module):
     def __init__(self, heads, d_model, dropout = 0.1):
         super().__init__()
