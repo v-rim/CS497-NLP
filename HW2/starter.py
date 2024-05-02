@@ -488,9 +488,9 @@ def main():
     opt.train = split_sequences(opt.train, opt)
     opt.train = batchify(opt.train, opt, 1)
     opt.valid = split_sequences(opt.valid, opt)
-    opt.valid = batchify(opt.vocab, opt, 1)
+    opt.valid = batchify(opt.valid, opt, 1)
     opt.test = split_sequences(opt.test, opt)
-    opt.test = batchify(opt.vocab, opt, 1)
+    opt.test = batchify(opt.test, opt, 1)
 
     
     obs = len(opt.train)
