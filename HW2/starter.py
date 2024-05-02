@@ -318,17 +318,35 @@ def join_vocab(vocab1, vocab2, opt):
     vocab = seqs1 + seqs2
     return vocab
 
+def array_to_csv(data, header, name):
+    f = open(f"{name}.csv", "w")
+    f.write(f"{header}\n")
+    for row in data:
+        for i in range(len(row)):
+            v = row[i]
+            f.write(f"{v}")
+
+            if i != len(row) - 1:
+                f.write(", ")
+            else:
+                f.write("\n")
+    f.close()
+
 def train_model(model, opt):
     print("training model...")
     model.train()
     model.to(opt.device)
 
     batches = batchify(opt.vocab, opt)
+    
+    training_loss = []
+    validation_loss = []
 
     for epoch in range(opt.epochs):
         model.train()
         total_loss = 0.0
         total_tokens = 0.0
+        total_batch_index = 0
 
         for i, batch in enumerate(batches):
             nopeak_mask = torch.stack([torch.tril(torch.ones(opt.seqlen - 1, opt.seqlen - 1)) for b in batch]).to(opt.device)
@@ -356,10 +374,20 @@ def train_model(model, opt):
             #  6. report intermediate trainining perplexity
             # I don't know how often we want to print this
             # avg_loss = total_loss / len(batches)
-            print(f'Epoch {epoch+1}, Batch: {i}, Loss: {loss.item():.4f} Perplexity: {ppl:.4f}')
+            loss_val = loss.item()
+            print(f'Epoch {epoch+1}, Batch: {i}, Loss: {loss_val:.4f} Perplexity: {ppl:.4f}')
+            training_loss.append([total_batch_index, loss_val])
+            total_batch_index += 1
         
-        test_model(model, opt, opt.valid, "validation")
+        loss_val = test_model(model, opt, opt.valid, "validation")
+        validation_loss.append([total_batch_index, loss_val])
 
+    test_model(model, opt, opt.train, "train")
+    test_model(model, opt, opt.test, "test")
+    
+    array_to_csv(training_loss, "batch_index, loss", "training_loss")
+    array_to_csv(validation_loss, "batch_index, loss", "validation_loss")
+    
     torch.save(model.state_dict(), opt.savename)
   
     
@@ -381,9 +409,11 @@ def test_model(model, opt, batches, corpus_name):
         targets = targets.view(-1)
         loss = F.cross_entropy(predictions, targets)
         batch_losses.append(loss)
-        
-    ppl = torch.exp(torch.stack(batch_losses).mean())
+
+    avg_loss = torch.stack(batch_losses).mean()        
+    ppl = torch.exp(avg_loss)
     print(f'Perplexity ({corpus_name}): {ppl:.4f}')
+    return avg_loss.item()
     
 
 def main():
@@ -393,14 +423,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-no_cuda', action='store_true')
     parser.add_argument('-SGDR', action='store_true')
-    parser.add_argument('-epochs', type=int, default=1) # Changed from default (20)
+    parser.add_argument('-epochs', type=int, default=20)
     parser.add_argument('-d_model', type=int, default=512)
-    parser.add_argument('-n_layers', type=int, default=1) # Changed from default (6)
+    parser.add_argument('-n_layers', type=int, default=6)
     parser.add_argument('-heads', type=int, default=8) 
     parser.add_argument('-dropout', type=int, default=0.1)
     parser.add_argument('-batchsize', type=int, default=4) # Changed from default (1)
     parser.add_argument('-printevery', type=int, default=100)
-    parser.add_argument('-lr', type=int, default=0.00001)
+    parser.add_argument('-lr', type=int, default=0.0001) # Changed from default (0.00001)
     parser.add_argument('-seqlen', type=int, default=512)
     parser.add_argument('-threshold', type=int, default=3)
     parser.add_argument('-savename', type=str, default="model_weights.pt")    
@@ -435,7 +465,7 @@ def main():
     opt.test = read_corpus('wiki2.test.txt',tokenizer)
     
     opt.vocab = join_vocab(opt.train, opt.test, opt)
-    # opt.vocab = join_vocab(opt.test, opt.valid, opt)
+    # opt.vocab = join_vocab(opt.test, opt.valid, opt) # Smaller corpus for testing
     
     opt.train = split_sequences(opt.train, opt)
     opt.train = batchify(opt.train, opt, 1)
