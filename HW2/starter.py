@@ -95,16 +95,13 @@ def attention(q, k, v, d_k, mask=None, dropout=None):
     return output
 
 def attention_euclidian(q, k, v, d_k, mask=None, dropout=None):
-    squared_euclidian = torch.sum((q.unsqueeze(1) - k.unsqueeze(1)) ** 2 , dim=-1)
-    distances = torch.sqrt(squared_euclidian)
+    distances = torch.sqrt(torch.sum((q.unsqueeze(3) - k.unsqueeze(2)) ** 2 , dim=-1))
 
     if mask is not None:
         mask = mask.unsqueeze(1)
-        distances = distances.masked_fill(mask == 0, 1e9)
+        distances = distances.masked_fill(mask==0, 1e9)
 
-    scores = torch.exp(-distances / math.sqrt(d_k))
-
-    scores = F.softmax(scores, dim=-1)
+    scores = F.softmax(-distances / math.sqrt(d_k), dim=-1)
 
     if dropout is not None:
         scores = dropout(scores)
@@ -143,7 +140,8 @@ class MultiHeadAttention(nn.Module):
         
 
         # calculate attention using function we will define next
-        scores = attention(q, k, v, self.d_k, mask, self.dropout)
+        # scores = attention(q, k, v, self.d_k, mask, self.dropout)
+        scores = attention_euclidian(q, k, v, self.d_k, mask, self.dropout)
         # concatenate heads and put through final linear layer
         concat = scores.transpose(1,2).contiguous()\
         .view(bs, -1, self.d_model)
