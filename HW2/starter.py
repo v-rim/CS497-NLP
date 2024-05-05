@@ -108,27 +108,6 @@ def attention_euclidian(q, k, v, mask=None, dropout=None):
     output = torch.matmul(scores, v)
     return output
 
-
-def attention_cosine(q, k, v, d_k, mask=None, dropout=None):
-    scores = nn.functional.cosine_similarity(q, k.transpose(-2, -1  ), dim=-1) 
-    print('\n   ')
-    print(scores.size())
-
-    if mask is not None:
-        mask = mask.unsqueeze(1)
-        scores = scores.masked_fill(mask==0, -1e9)
-
-    scores = F.softmax(scores, dim=-1)
-
-    print(scores.size())
-    # if dropout is not None:
-    #     scores = dropout(scores)
-    
-    output = torch.matmul(scores, v)
-    print(output.size())
-    exit()
-    return output
-
 class MultiHeadAttention(nn.Module):
     def __init__(self, heads, d_model, dropout = 0.1):
         super().__init__()
