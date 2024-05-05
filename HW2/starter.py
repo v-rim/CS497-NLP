@@ -79,34 +79,54 @@ class Norm(nn.Module):
         return norm
 
 def attention(q, k, v, d_k, mask=None, dropout=None):
-    
     scores = torch.matmul(q, k.transpose(-2, -1)) /  math.sqrt(d_k)
-    
+
     if mask is not None:
         mask = mask.unsqueeze(1)
         scores = scores.masked_fill(mask == 0, -1e9)
     
     scores = F.softmax(scores, dim=-1)
-    
+
     if dropout is not None:
         scores = dropout(scores)
         
     output = torch.matmul(scores, v)
     return output
 
-def attention_euclidian(q, k, v, d_k, mask=None, dropout=None):
-    distances = torch.sqrt(torch.sum((q.unsqueeze(3) - k.unsqueeze(2)) ** 2 , dim=-1))
+def attention_euclidian(q, k, v, mask=None, dropout=None):
+    scores = torch.norm(q) + torch.norm(k) - torch.matmul(q, k.transpose(-2, -1))
 
     if mask is not None:
         mask = mask.unsqueeze(1)
-        distances = distances.masked_fill(mask==0, 1e9)
+        scores = scores.masked_fill(mask==0, 1e9)
 
-    scores = F.softmax(-distances / math.sqrt(d_k), dim=-1)
+    scores = F.softmax(-scores, dim=-1)
 
     if dropout is not None:
         scores = dropout(scores)
     
     output = torch.matmul(scores, v)
+    return output
+
+
+def attention_cosine(q, k, v, d_k, mask=None, dropout=None):
+    scores = nn.functional.cosine_similarity(q, k.transpose(-2, -1  ), dim=-1) 
+    print('\n   ')
+    print(scores.size())
+
+    if mask is not None:
+        mask = mask.unsqueeze(1)
+        scores = scores.masked_fill(mask==0, -1e9)
+
+    scores = F.softmax(scores, dim=-1)
+
+    print(scores.size())
+    # if dropout is not None:
+    #     scores = dropout(scores)
+    
+    output = torch.matmul(scores, v)
+    print(output.size())
+    exit()
     return output
 
 class MultiHeadAttention(nn.Module):
@@ -141,7 +161,8 @@ class MultiHeadAttention(nn.Module):
 
         # calculate attention using function we will define next
         # scores = attention(q, k, v, self.d_k, mask, self.dropout)
-        scores = attention_euclidian(q, k, v, self.d_k, mask, self.dropout)
+        scores = attention_euclidian(q, k, v, mask, self.dropout)
+        # scores = attention_cosine(q, k, v, self.d_k, mask, self.dropout)
         # concatenate heads and put through final linear layer
         concat = scores.transpose(1,2).contiguous()\
         .view(bs, -1, self.d_model)
@@ -387,8 +408,6 @@ def train_model(model, opt):
 
             ppl = torch.exp(loss)
 
-            #  6. report intermediate trainining perplexity
-            # I don't know how often we want to print this
             # avg_loss = total_loss / len(batches)
             loss_val = loss.item()
             print(f'Epoch {epoch+1}, Batch: {i}, Loss: {loss_val:.4f} Perplexity: {ppl:.4f}')
