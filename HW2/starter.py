@@ -94,7 +94,7 @@ def attention(q, k, v, d_k, mask=None, dropout=None):
     return output
 
 def attention_euclidian(q, k, v, mask=None, dropout=None):
-    scores = torch.norm(q) + torch.norm(k) - torch.matmul(q, k.transpose(-2, -1))
+    scores = torch.norm(q)**2 + torch.norm(k)**2 - torch.matmul(q, k.transpose(-2, -1))
 
     if mask is not None:
         mask = mask.unsqueeze(1)
@@ -141,7 +141,7 @@ class MultiHeadAttention(nn.Module):
         # calculate attention using function we will define next
         # scores = attention(q, k, v, self.d_k, mask, self.dropout)
         scores = attention_euclidian(q, k, v, mask, self.dropout)
-        # scores = attention_cosine(q, k, v, self.d_k, mask, self.dropout)
+
         # concatenate heads and put through final linear layer
         concat = scores.transpose(1,2).contiguous()\
         .view(bs, -1, self.d_model)
@@ -260,6 +260,8 @@ class DecoderLayer(nn.Module):
         # x = x + self.dropout_2(self.attn_2(x2, x2x2, trg_mask))
         x2 = self.norm_3(x)
         x = x + self.dropout_3(self.ff(x2))
+        # No feedforward residual connection
+        # x = self.dropout_3(self.ff(x2))
         return x    
 
     
