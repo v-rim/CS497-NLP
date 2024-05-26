@@ -1,8 +1,10 @@
-from transformers import AutoTokenizer, BertModel, GPT2LMHeadModel, GPT2Tokenizer
+from transformers import AutoTokenizer, BertModel, GPT2LMHeadModel, GPT2Tokenizer, AutoModelForSequenceClassification
 import torch.optim as optim
 from transformers import TrainingArguments, Trainer, DataCollatorForLanguageModeling
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 import evaluate
+from collections import defaultdict
+from torch.utils.data import DataLoader
 
 import torch
 import math
@@ -16,8 +18,8 @@ def Q1():
     answers = ['A','B','C','D']
 
     train = []
-    test = []
     valid = []
+    test = []
     
     file_name = 'train_complete.jsonl'        
     with open(file_name) as json_file:
@@ -26,30 +28,16 @@ def Q1():
         json_str = json_list[i]
         result = json.loads(json_str)
         
-        base = result['fact1'] + ' [SEP] ' + result['question']['stem']
+        base = result['fact1'] + ' [SEP] ' + result['question']['stem'] + " "
         ans = answers.index(result['answerKey'])
         
-        obs = []
         for j in range(4):
             text = base + result['question']['choices'][j]['text'] + ' [SEP]'
             if j == ans:
                 label = 1
             else:
                 label = 0
-            obs.append([text,label])
-        train.append(obs)
-        
-        print(obs)
-        print(' ')
-        
-        print(result['question']['stem'])
-        print(' ',result['question']['choices'][0]['label'],result['question']['choices'][0]['text'])
-        print(' ',result['question']['choices'][1]['label'],result['question']['choices'][1]['text'])
-        print(' ',result['question']['choices'][2]['label'],result['question']['choices'][2]['text'])
-        print(' ',result['question']['choices'][3]['label'],result['question']['choices'][3]['text'])
-        print('  Fact: ',result['fact1'])
-        print('  Answer: ',result['answerKey'])
-        print('  ')
+            train.append({"label": label, "text": text})
                 
     file_name = 'dev_complete.jsonl'        
     with open(file_name) as json_file:
@@ -58,18 +46,16 @@ def Q1():
         json_str = json_list[i]
         result = json.loads(json_str)
         
-        base = result['fact1'] + ' [SEP] ' + result['question']['stem']
+        base = result['fact1'] + ' [SEP] ' + result['question']['stem'] + " "
         ans = answers.index(result['answerKey'])
         
-        obs = []
         for j in range(4):
             text = base + result['question']['choices'][j]['text'] + ' [SEP]'
             if j == ans:
                 label = 1
             else:
                 label = 0
-            obs.append([text,label])
-        valid.append(obs)
+            valid.append({"label": label, "text": text})
         
     file_name = 'test_complete.jsonl'        
     with open(file_name) as json_file:
@@ -78,25 +64,89 @@ def Q1():
         json_str = json_list[i]
         result = json.loads(json_str)
         
-        base = result['fact1'] + ' [SEP] ' + result['question']['stem']
+        base = result['fact1'] + ' [SEP] ' + result['question']['stem'] + " "
         ans = answers.index(result['answerKey'])
         
-        obs = []
         for j in range(4):
             text = base + result['question']['choices'][j]['text'] + ' [SEP]'
             if j == ans:
                 label = 1
             else:
                 label = 0
-            obs.append([text,label])
-        test.append(obs)
+            test.append({"label": label, "text": text})
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    model = BertModel.from_pretrained("bert-base-uncased")
+    model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=4)
     optimizer = optim.Adam(model.parameters(), lr=3e-5)
-    linear = torch.rand(768,2)
+    linear = torch.rand(768,1)
     
-#    Add code to fine-tune and test your MCQA classifier.
+    def tokenize_function(examples):
+        return tokenizer(examples["text"], padding="max_length", truncation=True)
+    
+    train = Dataset.from_list(train).map(tokenize_function, batched=True)
+    valid = Dataset.from_list(train).map(tokenize_function, batched=True)
+    test = Dataset.from_list(train).map(tokenize_function, batched=True)
+    
+    train = train.remove_columns(["text"])
+    valid = valid.remove_columns(["text"])
+    test = test.remove_columns(["text"])
+    
+    train = train.rename_column("label", "labels")
+    valid = valid.rename_column("label", "labels")
+    test = test.rename_column("label", "labels")
+    
+    train.set_format(type="torch")
+    valid.set_format(type="torch")
+    test.set_format(type="torch")
+    
+    train = train.select(range(100))
+    valid = train.select(range(100))
+    test = train.select(range(100))
+
+    train_dataloader = DataLoader(train, shuffle=True, batch_size=8)
+    eval_dataloader = DataLoader(valid, batch_size=8)
+    
+    from transformers import get_scheduler
+
+    num_epochs = 3
+    num_training_steps = num_epochs * len(train_dataloader)
+    lr_scheduler = get_scheduler(
+        name="linear", optimizer=optimizer, num_warmup_steps=0, num_training_steps=num_training_steps
+    )
+    
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    model.to(device)
+    
+    from tqdm.auto import tqdm
+
+    progress_bar = tqdm(range(num_training_steps))
+
+    model.train()
+    for epoch in range(num_epochs):
+        for batch in train_dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+            outputs = model(**batch)
+            loss = outputs.loss
+            loss.backward()
+
+            optimizer.step()
+            lr_scheduler.step()
+            optimizer.zero_grad()
+            progress_bar.update(1)
+        
+
+    metric = evaluate.load("accuracy")
+    model.eval()
+    for batch in eval_dataloader:
+        batch = {k: v.to(device) for k, v in batch.items()}
+        with torch.no_grad():
+            outputs = model(**batch)
+
+        logits = outputs.logits
+        predictions = torch.argmax(logits, dim=-1)
+        metric.add_batch(predictions=predictions, references=batch["labels"])
+
+    print(metric.compute())
 
 def Q2():  
     torch.manual_seed(0)
@@ -244,4 +294,4 @@ def Q2():
                  
 if __name__ == "__main__":
     Q1()
-    Q2()
+    # Q2()
