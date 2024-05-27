@@ -22,6 +22,19 @@ from transformers import (
     get_scheduler,
 )
 
+def array_to_csv(data, header, name):
+    f = open(f"{name}.csv", "w")
+    f.write(f"{header}\n")
+    for row in data:
+        for i in range(len(row)):
+            v = row[i]
+            f.write(f"{v}")
+
+            if i != len(row) - 1:
+                f.write(", ")
+            else:
+                f.write("\n")
+    f.close()
 
 class BERTWithClassificationHead(nn.Module):
     def __init__(self):
@@ -41,7 +54,6 @@ def Q1():
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
     model = BERTWithClassificationHead()
     model.to(device)
-    optimizer = optim.Adam(model.parameters(), lr=3e-5)
 
     def tokenize_function(examples):
         return tokenizer(examples["text"], padding="max_length", truncation=True)
@@ -75,8 +87,8 @@ def Q1():
 
         dataset = Dataset.from_list(data).map(tokenize_function, batched=True)
         dataset = dataset.remove_columns(["text"])
+        # dataset = dataset.select(range(8 * 1))
         dataset.set_format(type="torch")
-        dataset = dataset.select(range(8 * 8))
         return dataset
 
     train = generate_dataset("train_complete.jsonl")
@@ -87,8 +99,9 @@ def Q1():
     valid_dataloader = DataLoader(valid, shuffle=False, batch_size=8)
     test_dataloader = DataLoader(test, shuffle=False, batch_size=8)
 
-    num_epochs = 3
+    num_epochs = 1
     num_training_steps = num_epochs * len(train_dataloader)
+    optimizer = optim.Adam(model.parameters(), lr=3e-5)
     lr_scheduler = get_scheduler(
         name="linear",
         optimizer=optimizer,
@@ -96,6 +109,52 @@ def Q1():
         num_training_steps=num_training_steps,
     )
     criterion = nn.CrossEntropyLoss()
+    
+    train_loss = []
+    valid_loss = []
+    test_loss = []
+    valid_accuracy = []
+    test_accuracy = []
+    batch_index = 0
+    
+    print()
+    print("Zero-shot performance")
+    
+    model.eval()
+    metric = evaluate.load("accuracy")
+    for batch in valid_dataloader:
+        batch = {k: v.to(device) for k, v in batch.items()}
+
+        data = batch["input_ids"]
+        targets = batch["label"]
+
+        with torch.no_grad():
+            outputs = model(data)
+
+        grouped_probs = outputs.view(-1, 4)
+        references = torch.argmax(targets.view(-1, 4), dim=1)
+        predictions = torch.argmax(grouped_probs, dim=-1)
+
+        metric.add_batch(predictions=predictions, references=references)
+    print(f"Validation Accuracy: {metric.compute()["accuracy"]:.4f}")
+    
+    model.eval()
+    metric = evaluate.load("accuracy")
+    for batch in test_dataloader:
+        batch = {k: v.to(device) for k, v in batch.items()}
+
+        data = batch["input_ids"]
+        targets = batch["label"]
+
+        with torch.no_grad():
+            outputs = model(data)
+
+        grouped_probs = outputs.view(-1, 4)
+        references = torch.argmax(targets.view(-1, 4), dim=1)
+        predictions = torch.argmax(grouped_probs, dim=-1)
+
+        metric.add_batch(predictions=predictions, references=references)
+    print(f"Test Accuracy: {metric.compute()['accuracy']:.4f}")
 
     model.train()
     for epoch in range(num_epochs):
@@ -109,18 +168,20 @@ def Q1():
 
             optimizer.zero_grad()
             outputs = model(data)
-
             grouped_probs = outputs.view(-1, 4)
             target_index = torch.argmax(targets.view(-1, 4), dim=-1)
 
             loss = criterion(grouped_probs, target_index)
             pbar.set_description(f"Loss: {loss.item()}")
+            train_loss.append([batch_index, loss.item()])
+            
             loss.backward()
             optimizer.step()
             lr_scheduler.step()
+            batch_index += 1
 
-        metric = evaluate.load("accuracy")
         model.eval()
+        metric = evaluate.load("accuracy")
         for batch in valid_dataloader:
             batch = {k: v.to(device) for k, v in batch.items()}
 
@@ -129,14 +190,23 @@ def Q1():
 
             with torch.no_grad():
                 outputs = model(data)
+                grouped_probs = outputs.view(-1, 4)
+                target_index = torch.argmax(targets.view(-1, 4), dim=-1)
+                
+            loss = criterion(grouped_probs, target_index)
+            valid_loss.append([batch_index, loss.item()])
 
             grouped_probs = outputs.view(-1, 4)
             references = torch.argmax(targets.view(-1, 4), dim=1)
             predictions = torch.argmax(grouped_probs, dim=-1)
 
             metric.add_batch(predictions=predictions, references=references)
-        print(f"Validation Accuracy: {metric.compute()["accuracy"]:.4f}")
+        acc = metric.compute()["accuracy"]
+        print(f"Validation Accuracy: {acc:.4f}")
+        valid_accuracy.append([batch_index, acc])
         
+        model.eval()
+        metric = evaluate.load("accuracy")
         for batch in test_dataloader:
             batch = {k: v.to(device) for k, v in batch.items()}
 
@@ -145,13 +215,26 @@ def Q1():
 
             with torch.no_grad():
                 outputs = model(data)
+                grouped_probs = outputs.view(-1, 4)
+                target_index = torch.argmax(targets.view(-1, 4), dim=-1)
+                
+            loss = criterion(grouped_probs, target_index)
+            test_loss.append([batch_index, loss.item()])
 
             grouped_probs = outputs.view(-1, 4)
             references = torch.argmax(targets.view(-1, 4), dim=1)
             predictions = torch.argmax(grouped_probs, dim=-1)
 
             metric.add_batch(predictions=predictions, references=references)
-        print(f"Test Accuracy: {metric.compute()['accuracy']:.4f}")
+        acc = metric.compute()["accuracy"]
+        print(f"Test Accuracy: {acc:.4f}")
+        test_accuracy.append([batch_index, acc])
+        
+    array_to_csv(train_loss, "Batch Index, Loss", "q1_results/train_loss")
+    array_to_csv(valid_loss, "Batch Index, Loss", "q1_results/valid_loss")
+    array_to_csv(test_loss, "Batch Index, Loss", "q1_results/test_loss")
+    array_to_csv(valid_accuracy, "Batch Index, Accuracy", "q1_results/valid_accuracy")
+    array_to_csv(test_accuracy, "Batch Index, Accuracy", "q1_results/test_accuracy")
 
 
 def Q2():
