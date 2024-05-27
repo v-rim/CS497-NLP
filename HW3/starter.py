@@ -2,18 +2,16 @@ import json
 import math
 import sys
 import time
-from collections import defaultdict
 
-from torch import nn
 import evaluate
 import numpy as np
-from tqdm import tqdm
 import torch
 import torch.optim as optim
 from datasets import Dataset, load_dataset
+from torch import nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 from transformers import (
-    AutoModelForSequenceClassification,
     AutoTokenizer,
     BertModel,
     DataCollatorForLanguageModeling,
@@ -25,22 +23,25 @@ from transformers import (
 )
 
 
+class BERTWithClassificationHead(nn.Module):
+    def __init__(self):
+        super(BERTWithClassificationHead, self).__init__()
+        self.bert = BertModel.from_pretrained("bert-base-uncased")
+        self.linear = nn.Linear(768, 1)
+
+    def forward(self, ids):
+        sequence_output = self.bert(ids).last_hidden_state
+        return self.linear(sequence_output[:, 0, :].view(-1, 768))
+
+
 def Q1():
     torch.manual_seed(0)
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    model = AutoModelForSequenceClassification.from_pretrained(
-        "bert-base-uncased", num_labels=4
-    )
+    model = BERTWithClassificationHead()
+    model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=3e-5)
-    
-    class ClassificationHead(nn.Module):
-        def __init__(self, input_size, num_classes):
-            super(ClassificationHead, self).__init__()
-            self.linear = nn.Linear(input_size, num_classes)
-        
-        def forward(self, x):
-            return self.linear(x)
 
     def tokenize_function(examples):
         return tokenizer(examples["text"], padding="max_length", truncation=True)
@@ -55,7 +56,13 @@ def Q1():
             json_str = json_list[i]
             result = json.loads(json_str)
 
-            base = result["fact1"] + " [SEP] " + result["question"]["stem"] + " "
+            base = (
+                "[CLS] "
+                + result["fact1"]
+                + " [SEP] "
+                + result["question"]["stem"]
+                + " "
+            )
             ans = answers.index(result["answerKey"])
 
             for j in range(4):
@@ -64,21 +71,21 @@ def Q1():
                     label = 1
                 else:
                     label = 0
-                data.append({"label": label, "text": text})
+                data.append({"text": text, "label": label})
 
         dataset = Dataset.from_list(data).map(tokenize_function, batched=True)
         dataset = dataset.remove_columns(["text"])
-        dataset = dataset.rename_column("label", "labels")
         dataset.set_format(type="torch")
-        dataset = dataset.select(range(12))
+        dataset = dataset.select(range(8 * 8))
         return dataset
 
     train = generate_dataset("train_complete.jsonl")
     valid = generate_dataset("dev_complete.jsonl")
     test = generate_dataset("test_complete.jsonl")
 
-    train_dataloader = DataLoader(train, shuffle=True, batch_size=8)
-    eval_dataloader = DataLoader(valid, batch_size=8)
+    train_dataloader = DataLoader(train, shuffle=False, batch_size=8)
+    valid_dataloader = DataLoader(valid, shuffle=False, batch_size=8)
+    test_dataloader = DataLoader(test, shuffle=False, batch_size=8)
 
     num_epochs = 3
     num_training_steps = num_epochs * len(train_dataloader)
@@ -88,35 +95,63 @@ def Q1():
         num_warmup_steps=0,
         num_training_steps=num_training_steps,
     )
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    
-    model.to(device)
+    criterion = nn.CrossEntropyLoss()
+
     model.train()
     for epoch in range(num_epochs):
-        print(f"Train : Epoch {epoch + 1}/{num_epochs}")
-        for batch in tqdm(train_dataloader):
+        print()
+        print(f"Epoch {epoch + 1}/{num_epochs}")
+        for batch in (pbar := tqdm(train_dataloader)):
             batch = {k: v.to(device) for k, v in batch.items()}
-            outputs = model(**batch)
-            loss = outputs.loss
-            loss.backward()
 
+            data = batch["input_ids"]
+            targets = batch["label"]
+
+            optimizer.zero_grad()
+            outputs = model(data)
+
+            grouped_probs = outputs.view(-1, 4)
+            target_index = torch.argmax(targets.view(-1, 4), dim=-1)
+
+            loss = criterion(grouped_probs, target_index)
+            pbar.set_description(f"Loss: {loss.item()}")
+            loss.backward()
             optimizer.step()
             lr_scheduler.step()
-            optimizer.zero_grad()
 
         metric = evaluate.load("accuracy")
         model.eval()
-        print(f"Validation : Epoch {epoch + 1}/{num_epochs}")
-        for batch in tqdm(eval_dataloader):
+        for batch in valid_dataloader:
             batch = {k: v.to(device) for k, v in batch.items()}
+
+            data = batch["input_ids"]
+            targets = batch["label"]
+
             with torch.no_grad():
-                outputs = model(**batch)
+                outputs = model(data)
 
-            logits = outputs.logits
-            predictions = torch.argmax(logits, dim=-1)
-            metric.add_batch(predictions=predictions, references=batch["labels"])
+            grouped_probs = outputs.view(-1, 4)
+            references = torch.argmax(targets.view(-1, 4), dim=1)
+            predictions = torch.argmax(grouped_probs, dim=-1)
 
-        print(metric.compute())
+            metric.add_batch(predictions=predictions, references=references)
+        print(f"Validation Accuracy: {metric.compute()["accuracy"]:.4f}")
+        
+        for batch in test_dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
+
+            data = batch["input_ids"]
+            targets = batch["label"]
+
+            with torch.no_grad():
+                outputs = model(data)
+
+            grouped_probs = outputs.view(-1, 4)
+            references = torch.argmax(targets.view(-1, 4), dim=1)
+            predictions = torch.argmax(grouped_probs, dim=-1)
+
+            metric.add_batch(predictions=predictions, references=references)
+        print(f"Test Accuracy: {metric.compute()['accuracy']:.4f}")
 
 
 def Q2():
