@@ -87,7 +87,6 @@ def Q1():
 
         dataset = Dataset.from_list(data).map(tokenize_function, batched=True)
         dataset = dataset.remove_columns(["text"])
-        # dataset = dataset.select(range(8 * 1))
         dataset.set_format(type="torch")
         return dataset
 
@@ -95,11 +94,11 @@ def Q1():
     valid = generate_dataset("dev_complete.jsonl")
     test = generate_dataset("test_complete.jsonl")
 
-    train_dataloader = DataLoader(train, shuffle=False, batch_size=8)
-    valid_dataloader = DataLoader(valid, shuffle=False, batch_size=8)
-    test_dataloader = DataLoader(test, shuffle=False, batch_size=8)
+    train_dataloader = DataLoader(train, shuffle=False, batch_size=16)
+    valid_dataloader = DataLoader(valid, shuffle=False, batch_size=16)
+    test_dataloader = DataLoader(test, shuffle=False, batch_size=16)
 
-    num_epochs = 1
+    num_epochs = 20
     num_training_steps = num_epochs * len(train_dataloader)
     optimizer = optim.Adam(model.parameters(), lr=3e-5)
     lr_scheduler = get_scheduler(
@@ -182,6 +181,7 @@ def Q1():
 
         model.eval()
         metric = evaluate.load("accuracy")
+        losses = []
         for batch in valid_dataloader:
             batch = {k: v.to(device) for k, v in batch.items()}
 
@@ -194,19 +194,21 @@ def Q1():
                 target_index = torch.argmax(targets.view(-1, 4), dim=-1)
                 
             loss = criterion(grouped_probs, target_index)
-            valid_loss.append([batch_index, loss.item()])
+            losses.append(loss.item())
 
             grouped_probs = outputs.view(-1, 4)
             references = torch.argmax(targets.view(-1, 4), dim=1)
             predictions = torch.argmax(grouped_probs, dim=-1)
 
             metric.add_batch(predictions=predictions, references=references)
+        valid_loss.append([batch_index, np.mean(losses)])
         acc = metric.compute()["accuracy"]
         print(f"Validation Accuracy: {acc:.4f}")
         valid_accuracy.append([batch_index, acc])
         
         model.eval()
         metric = evaluate.load("accuracy")
+        losses = []
         for batch in test_dataloader:
             batch = {k: v.to(device) for k, v in batch.items()}
 
@@ -219,13 +221,14 @@ def Q1():
                 target_index = torch.argmax(targets.view(-1, 4), dim=-1)
                 
             loss = criterion(grouped_probs, target_index)
-            test_loss.append([batch_index, loss.item()])
+            losses.append(loss.item())
 
             grouped_probs = outputs.view(-1, 4)
             references = torch.argmax(targets.view(-1, 4), dim=1)
             predictions = torch.argmax(grouped_probs, dim=-1)
 
             metric.add_batch(predictions=predictions, references=references)
+        test_loss.append([batch_index, np.mean(losses)])
         acc = metric.compute()["accuracy"]
         print(f"Test Accuracy: {acc:.4f}")
         test_accuracy.append([batch_index, acc])
