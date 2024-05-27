@@ -213,9 +213,39 @@ def Q2():
     )
     model = GPT2LMHeadModel.from_pretrained('gpt2')
 
+    # Zero-shot Accuracy Validation
+    correct = 0
+    total = 0
+    for i in range(len(dict_valid)):
+        inputs = tokenizer(dict_valid[i][:-1], return_tensors="pt")
+        generation_output = model.generate(
+            **inputs,
+            return_dict_in_generate=True,
+            max_new_tokens=5,
+            pad_token_id=tokenizer.eos_token_id)
+        if dict_valid[i][-1] in tokenizer.decode(generation_output['sequences'][0][-1], ignore_special_tokens=True):
+            correct += 1
+        total += 1
+    print(f"Zero-shot Accuracy Validation: {correct/total}")
+
+    # Zero-shot Accuracy Test
+    correct = 0
+    total = 0
+    for i in range(len(dict_test)):
+        inputs = tokenizer(dict_test[i][:-1], return_tensors="pt")
+        generation_output = model.generate(
+            **inputs,
+            return_dict_in_generate=True,
+            max_new_tokens=5,
+            pad_token_id=tokenizer.eos_token_id)
+        if dict_test[i][-1] in tokenizer.decode(generation_output['sequences'][0][-1], ignore_special_tokens=True):
+            correct += 1
+        total += 1
+    print(f"Zero-shot Accuracy Test: {correct/total}")
+
     training_args = TrainingArguments(
         output_dir="results",
-        num_train_epochs=1.0)
+        num_train_epochs=20.0)
 
     trainer = Trainer(
         model=model,
@@ -226,22 +256,37 @@ def Q2():
     trainer.train()
     trainer.save_model()
 
-    ids = tokenizer.encode(dict_test[0][:-1], return_tensors='pt').to('cuda')
-    print(f"Input: {dict_test[0][: -1]}\n")
-    final_outputs = model.generate(
-        ids,
-        do_sample=True,
-        max_new_tokens=1,
-    )
-    print(ids)
-    print(type(final_outputs))
-    print(final_outputs)
-    print(f"Output -2: {tokenizer.decode(final_outputs[0][-2], skip_special_tokens=True)}")
-    print(f"Output -1: {tokenizer.decode(final_outputs[0][-1], skip_special_tokens=True)}")
+    # Fine-tuned Accuracy Validation
+    correct = 0
+    total = 0
+    for i in range(len(dict_valid)):
+        inputs = tokenizer(dict_valid[i][:-1], return_tensors="pt").to("cuda")
+        generation_output = model.generate(
+            **inputs,
+            return_dict_in_generate=True,
+            max_new_tokens=5,
+            pad_token_id=tokenizer.eos_token_id)
+        if dict_valid[i][-1] in tokenizer.decode(generation_output['sequences'][0][-1], ignore_special_tokens=True):
+            correct += 1
+        total += 1
+    print(f"Fine-tuned Accuracy Validation: {correct/total}")
+    
+    # Fine-tuned Accuracy Test
+    correct = 0
+    total = 0
+    for i in range(len(dict_test)):
+        inputs = tokenizer(dict_test[i][:-1], return_tensors="pt").to("cuda")
+        generation_output = model.generate(
+            **inputs,
+            return_dict_in_generate=True,
+            max_new_tokens=5,
+            pad_token_id=tokenizer.eos_token_id)
+        if dict_test[i][-1] in tokenizer.decode(generation_output['sequences'][0][-1], ignore_special_tokens=True):
+            correct += 1
+        total += 1
+    print(f"Fine-tuned Accuracy Test: {correct/total}")
 
 
-
-                 
 if __name__ == "__main__":
-    Q1()
+    # Q1()
     Q2()
