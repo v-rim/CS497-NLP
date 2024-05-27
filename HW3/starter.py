@@ -367,7 +367,6 @@ def Q2():
     )
     model = GPT2LMHeadModel.from_pretrained("gpt2")
 
-<<<<<<< HEAD
     # Zero-shot Accuracy Validation
     correct = 0
     total = 0
@@ -401,9 +400,6 @@ def Q2():
     training_args = TrainingArguments(
         output_dir="results",
         num_train_epochs=20.0)
-=======
-    training_args = TrainingArguments(output_dir="results", num_train_epochs=1.0)
->>>>>>> 0545107bb3cf9a8e8c0147efc9e5471531c93737
 
     trainer = Trainer(
         model=model,
@@ -414,7 +410,6 @@ def Q2():
     trainer.train()
     trainer.save_model()
 
-<<<<<<< HEAD
     # Fine-tuned Accuracy Validation
     correct = 0
     total = 0
@@ -447,28 +442,5 @@ def Q2():
 
 
 if __name__ == "__main__":
-    # Q1()
-    Q2()
-=======
-    ids = tokenizer.encode(dict_test[0][:-1], return_tensors="pt").to("cuda")
-    print(f"Input: {dict_test[0][: -1]}\n")
-    final_outputs = model.generate(
-        ids,
-        do_sample=True,
-        max_new_tokens=1,
-    )
-    print(ids)
-    print(type(final_outputs))
-    print(final_outputs)
-    print(
-        f"Output -2: {tokenizer.decode(final_outputs[0][-2], skip_special_tokens=True)}"
-    )
-    print(
-        f"Output -1: {tokenizer.decode(final_outputs[0][-1], skip_special_tokens=True)}"
-    )
-
-
-if __name__ == "__main__":
     Q1()
-    # Q2()
->>>>>>> 0545107bb3cf9a8e8c0147efc9e5471531c93737
+    Q2()
