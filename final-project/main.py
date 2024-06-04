@@ -60,7 +60,7 @@ def get_datasets(tokenizer):
     dataset = load_dataset(
         "bigcode/the-stack-dedup",
         data_dir="data/python",
-        split="train[:100]",
+        split="train[:22321]",
         num_proc=16,
         verification_mode=VerificationMode.NO_CHECKS,
         cache_dir="./cache",
@@ -134,11 +134,11 @@ def train_model():
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=datasets["train"].select(range(100)),
-        eval_dataset=datasets["test"].select(range(100)),
+        train_dataset=datasets["train"].select(range(22321)),
+        eval_dataset=datasets["test"].select(range(22321)),
         data_collator=data_collator,
     )
-    # trainer.args._n_gpu = 1
+    trainer.args._n_gpu = 1
 
     trainer.train()
 
