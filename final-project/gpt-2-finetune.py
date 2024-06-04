@@ -1,59 +1,14 @@
-from datasets import load_dataset, IterableDataset
+from datasets import load_dataset
 from tqdm import tqdm
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
+    Trainer,
+    TrainingArguments,
 )
 from transformers.models.gpt2.tokenization_gpt2 import bytes_to_unicode
-import torch
-from torch.utils.data import DataLoader
-
-
-class ConstantLengthDataset(IterableDataset):
-    def __init__(
-        self,
-        tokenizer,
-        dataset,
-        infinite=False,
-        seq_length=1024,
-        num_of_sequences=1024,
-        chars_per_token=3.6,
-    ):
-        self.tokenizer = tokenizer
-        self.concat_token_id = tokenizer.bos_token_id
-        self.dataset = dataset
-        self.seq_length = seq_length
-        self.input_characters = seq_length * chars_per_token * num_of_sequences
-        self.epoch = 0
-        self.infinite = infinite
-
-    def __iter__(self):
-        iterator = iter(self.dataset)
-        more_examples = True
-        while more_examples:
-            buffer, buffer_len = [], 0
-            while True:
-                if buffer_len >= self.input_characters:
-                    break
-                try:
-                    buffer.append(next(iterator)["content"])
-                    buffer_len += len(buffer[-1])
-                except StopIteration:
-                    if self.infinite:
-                        iterator = iter(self.dataset)
-                        self.epoch += 1
-                    else:
-                        more_examples = False
-                        break
-            tokenized_inputs = self.tokenizer(buffer, truncation=False)["input_ids"]
-            all_token_ids = []
-            for tokenized_input in tokenized_inputs:
-                all_token_ids.extend(tokenized_input + [self.concat_token_id])
-            for i in range(0, len(all_token_ids), self.seq_length):
-                input_ids = all_token_ids[i : i + self.seq_length]
-                if len(input_ids) == self.seq_length:
-                    yield torch.tensor(input_ids)
+from transformers import DataCollatorForLanguageModeling
 
 
 def train_tokenizer():
@@ -82,7 +37,7 @@ def train_tokenizer():
 
 def get_model():
     # Load the tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("gpt2/stack-tokenizer")
+    tokenizer = AutoTokenizer.from_pretrained("./gpt2/stack-tokenizer")
 
     # Configuration
     config_kwargs = {
@@ -94,38 +49,85 @@ def get_model():
     # Load model with config and push to hub
     config = AutoConfig.from_pretrained("openai-community/gpt2-large", **config_kwargs)
     model = AutoModelForCausalLM.from_config(config)
-    model.save_pretrained("gpt2/stack-model", push_to_hub=True)
+    model.save_pretrained("gpt2/stack-model")
+
+
+def get_datasets(tokenizer):
+    dataset = load_dataset(
+        "bigcode/the-stack-dedup",
+        data_dir="data/python",
+        split="train[:100]",
+    )
+    dataset = dataset.train_test_split(test_size=0.3)
+
+    def preprocess_function(examples):
+        return tokenizer([" ".join(x) for x in examples["content"]])
+
+    tokenized = dataset.map(
+        preprocess_function, batched=True, remove_columns=dataset["train"].column_names
+    )
+
+    block_size = 128
+
+    def group_texts(examples):
+        # Concatenate all texts.
+        concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
+        total_length = len(concatenated_examples[list(examples.keys())[0]])
+        # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
+        # customize this part to your needs.
+        if total_length >= block_size:
+            total_length = (total_length // block_size) * block_size
+        # Split by chunks of block_size.
+        result = {
+            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+            for k, t in concatenated_examples.items()
+        }
+        result["labels"] = result["input_ids"].copy()
+        return result
+
+    grouped = tokenized.map(group_texts, batched=True)
+
+    return grouped
 
 
 def train_model():
     # Load tokenizer and model
-    tokenizer = AutoTokenizer.from_pretrained("gpt2/stack-tokenizer")
-    model = AutoModelForCausalLM.from_pretrained("gpt2/stack-model")
-    model.gradient_checkpointing_enable()
+    tokenizer = AutoTokenizer.from_pretrained("./gpt2/stack-tokenizer")
+    model = AutoModelForCausalLM.from_pretrained("./gpt2/stack-model")
 
-    def create_dataloaders():
-        train_data = load_dataset(
-            "bigcode/the-stack-dedup",
-            data_dir="data/python",
-            split="train[:7%]",
-        )
-        train_data = train_data.shuffle(buffer_size=8)
-        valid_data = load_dataset(
-            "bigcode/the-stack-dedup",
-            data_dir="data/python",
-            split="train[7%:10%]",
-        )
+    # Load train and test sets
+    datasets = get_datasets(tokenizer)
 
-        train_dataset = ConstantLengthDataset(tokenizer, train_data, infinite=True)
-        valid_dataset = ConstantLengthDataset(tokenizer, valid_data, infinite=False)
+    tokenizer.pad_token = tokenizer.eos_token
+    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
-        train_dataloader = DataLoader(train_dataset, batch_size=8)
-        eval_dataloader = DataLoader(valid_dataset, batch_size=8)
-        return train_dataloader, eval_dataloader
+    training_args = TrainingArguments(
+        output_dir="gpt2-stack-finetune",
+        evaluation_strategy="epoch",
+        save_strategy="epoch",
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
+        eval_accumulation_steps=1,
+        gradient_accumulation_steps=4,
+        gradient_checkpointing=True,
+        fp16=True,
+        num_train_epochs=5,
+        learning_rate=2e-5,
+        weight_decay=0.01,
+    )
 
-    train_dataloader, eval_dataloader = create_dataloaders()
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=datasets["train"],
+        eval_dataset=datasets["test"],
+        data_collator=data_collator,
+    )
+
+    trainer.train()
 
 
 if __name__ == "__main__":
     # train_tokenizer()
-    get_model()
+    # get_model()
+    train_model()
