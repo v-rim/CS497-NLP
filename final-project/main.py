@@ -11,6 +11,8 @@ from transformers.models.gpt2.tokenization_gpt2 import bytes_to_unicode
 from transformers import DataCollatorForLanguageModeling
 import os
 
+num_examples = 27902 # For 10M train with 70/30 train/test split
+# num_examples = 60
 
 def train_tokenizer():
     # Iterator for Training
@@ -27,14 +29,14 @@ def train_tokenizer():
         "bigcode/the-stack-dedup",
         data_dir="data/python",
         split="train[:10%]",
-        num_proc=16,
+        num_proc=64,
         verification_mode=VerificationMode.NO_CHECKS,
         cache_dir="./cache",
     )
 
     # Training and saving
     new_tokenizer = tokenizer.train_new_from_iterator(
-        batch_iterator(dataset), vocab_size=50000, initial_alphabet=base_vocab
+        batch_iterator(dataset), vocab_size=75000, initial_alphabet=base_vocab
     )
     new_tokenizer.save_pretrained("gpt2/stack-tokenizer")
 
@@ -60,8 +62,8 @@ def get_datasets(tokenizer):
     dataset = load_dataset(
         "bigcode/the-stack-dedup",
         data_dir="data/python",
-        split="train[:22321]",
-        num_proc=16,
+        split=f"train[:{int(num_examples * 1.1)}]",
+        num_proc=64,
         verification_mode=VerificationMode.NO_CHECKS,
         cache_dir="./cache",
     )
@@ -76,7 +78,7 @@ def get_datasets(tokenizer):
         remove_columns=dataset["train"].column_names,
     )
 
-    block_size = int(512 * 1.25)
+    block_size = int(512)
 
     def group_texts(examples):
         # Concatenate all texts.
@@ -94,7 +96,7 @@ def get_datasets(tokenizer):
         result["labels"] = result["input_ids"].copy()
         return result
 
-    grouped = tokenized.map(group_texts, batched=True, num_proc=16)
+    grouped = tokenized.map(group_texts, batched=True, num_proc=64)
 
     return grouped
 
@@ -119,12 +121,12 @@ def train_model():
         output_dir="gpt2-stack-finetune",
         eval_strategy="epoch",
         save_strategy="epoch",
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=1,
+        per_device_train_batch_size=8,
+        per_device_eval_batch_size=8,
         eval_accumulation_steps=1,
         gradient_accumulation_steps=4,
         fp16=True,
-        num_train_epochs=8,
+        num_train_epochs=10,
         learning_rate=2e-5,
         weight_decay=0.01,
         ddp_find_unused_parameters=False,
@@ -134,8 +136,8 @@ def train_model():
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=datasets["train"].select(range(22321)),
-        eval_dataset=datasets["test"].select(range(22321)),
+        train_dataset=datasets["train"].select(range(int(num_examples * .7))),
+        eval_dataset=datasets["test"].select(range(int(num_examples * .3))),
         data_collator=data_collator,
     )
     trainer.args._n_gpu = 1
