@@ -11,18 +11,12 @@ from transformers.models.gpt2.tokenization_gpt2 import bytes_to_unicode
 from transformers import DataCollatorForLanguageModeling
 import os
 
-num_examples = 27902 # For 10M train with 70/30 train/test split
+num_examples = 27902 * 5 # For 10M train with 70/30 train/test split
 # num_examples = 60
 
 def train_tokenizer():
-    # Iterator for Training
-    def batch_iterator(dataset, batch_size=8):
-        for _ in tqdm(range(0, len(dataset), batch_size)):
-            yield [next(iter(dataset))["content"] for _ in range(batch_size)]
-
     # Base tokenizer
     tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2")
-    base_vocab = list(bytes_to_unicode().values())
 
     # Load dataset
     dataset = load_dataset(
@@ -30,14 +24,16 @@ def train_tokenizer():
         data_dir="data/python",
         split="train[:10%]",
         num_proc=64,
-        verification_mode=VerificationMode.NO_CHECKS,
         cache_dir="./cache",
     )
+    dataset = dataset.shuffle()
+    
+    batch_size = 1024
+    def batch_iterator():
+        for i in range(0, len(dataset), batch_size):
+            yield dataset[i : i + batch_size]["content"]
 
-    # Training and saving
-    new_tokenizer = tokenizer.train_new_from_iterator(
-        batch_iterator(dataset), vocab_size=75000, initial_alphabet=base_vocab
-    )
+    new_tokenizer = tokenizer.train_new_from_iterator(batch_iterator(), vocab_size=750000)
     new_tokenizer.save_pretrained("gpt2/stack-tokenizer")
 
 
@@ -62,11 +58,11 @@ def get_datasets(tokenizer):
     dataset = load_dataset(
         "bigcode/the-stack-dedup",
         data_dir="data/python",
-        split=f"train[:{int(num_examples * 1.1)}]",
+        split=f"train[:{int(num_examples)}]",
         num_proc=64,
-        verification_mode=VerificationMode.NO_CHECKS,
         cache_dir="./cache",
     )
+    dataset = dataset.shuffle()
     dataset = dataset.train_test_split(test_size=0.3)
 
     def preprocess_function(examples):
@@ -119,14 +115,15 @@ def train_model():
 
     training_args = TrainingArguments(
         output_dir="gpt2-stack-finetune",
-        eval_strategy="epoch",
-        save_strategy="epoch",
+        # eval_strategy="epoch",
+        eval_strategy="steps",
+        # save_strategy="epoch",
         per_device_train_batch_size=8,
         per_device_eval_batch_size=8,
         eval_accumulation_steps=1,
         gradient_accumulation_steps=4,
         fp16=True,
-        num_train_epochs=10,
+        num_train_epochs=2,
         learning_rate=2e-5,
         weight_decay=0.01,
         ddp_find_unused_parameters=False,
@@ -146,6 +143,6 @@ def train_model():
 
 
 if __name__ == "__main__":
-    # train_tokenizer()
+    train_tokenizer()
     # get_model()
-    train_model()
+    # train_model()
